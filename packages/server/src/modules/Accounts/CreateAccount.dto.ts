@@ -6,7 +6,11 @@ import {
   MinLength,
   MaxLength,
   IsBoolean,
+  IsIn,
+  Matches,
+  IsISO4217CurrencyCode,
 } from 'class-validator';
+import { ACCOUNT_TYPE } from '@/constants/accounts';
 
 export class CreateAccountDTO {
   @IsString()
@@ -24,32 +28,40 @@ export class CreateAccountDTO {
   @IsString()
   @MinLength(3)
   @MaxLength(6)
+  @Matches(/^[A-Z0-9]{3,6}$/, {
+    message: 'Account code must be 3-6 characters containing only uppercase letters and numbers',
+  })
   @ApiProperty({
-    description: 'Account code',
+    description: 'Account code (3-6 uppercase letters and numbers)',
     example: 'CA001',
     required: false,
     minLength: 3,
     maxLength: 6,
+    pattern: '^[A-Z0-9]{3,6}$',
   })
   code?: string;
 
   @IsOptional()
   @IsString()
+  @IsISO4217CurrencyCode({
+    message: 'Currency code must be a valid ISO 4217 currency code',
+  })
   @ApiProperty({
-    description: 'Currency code for the account',
+    description: 'Currency code for the account (ISO 4217 format)',
     example: 'USD',
     required: false,
+    pattern: '^[A-Z]{3}$',
   })
   currencyCode?: string;
 
   @IsString()
-  @MinLength(3)
-  @MaxLength(255)
+  @IsIn(Object.values(ACCOUNT_TYPE), {
+    message: `Account type must be one of: ${Object.values(ACCOUNT_TYPE).join(', ')}`,
+  })
   @ApiProperty({
     description: 'Type of account',
-    example: 'asset',
-    minLength: 3,
-    maxLength: 255,
+    example: 'cash',
+    enum: Object.values(ACCOUNT_TYPE),
   })
   accountType: string;
 
