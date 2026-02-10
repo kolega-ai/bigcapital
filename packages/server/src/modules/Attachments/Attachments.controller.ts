@@ -18,8 +18,11 @@ import {
   Post,
   Res,
   UnauthorizedException,
+  BadRequestException,
+  InternalServerErrorException,
   UploadedFile,
   UseInterceptors,
+  Logger,
 } from '@nestjs/common';
 import {
   LinkAttachmentDto,
@@ -28,14 +31,17 @@ import {
 } from './dtos/Attachment.dto';
 import { AttachmentsApplication } from './AttachmentsApplication';
 import { AttachmentUploadPipeline } from './S3UploadPipeline';
-import { FileInterceptor } from '@/common/interceptors/file.interceptor';
+import { SecureFileInterceptor } from '@/common/interceptors/SecureFileInterceptor';
 import { ConfigService } from '@nestjs/config';
 import { ApiCommonHeaders } from '@/common/decorators/ApiCommonHeaders';
+import * as crypto from 'crypto';
 
 @ApiTags('Attachments')
 @Controller('/attachments')
 @ApiCommonHeaders()
 export class AttachmentsController {
+  private readonly logger = new Logger(AttachmentsController.name);
+
   /**
    * @param {AttachmentsApplication} attachmentsApplication - Attachments application.
    * @param uploadPipelineService
@@ -47,36 +53,126 @@ export class AttachmentsController {
   ) {}
 
   /**
-   * Uploads the attachments to S3 and store the file metadata to DB.
+   * Uploads the attachments with comprehensive security validation
    */
   @Post()
   @HttpCode(200)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(SecureFileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload attachment to S3' })
+  @ApiOperation({ 
+    summary: 'Upload attachment with security validation',
+    description: 'Upload file with comprehensive validation including file type, size, and content scanning'
+  })
   @ApiBody({ description: 'Upload attachment', type: UploadAttachmentDto })
   @ApiResponse({
     status: 200,
     description: 'The document has been uploaded successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        fileId: { type: 'string' },
+        filename: { type: 'string' },
+        size: { type: 'number' },
+        uploadedAt: { type: 'string', format: 'date-time' }
+      }
+    }
   })
   @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - File upload failed',
+    status: 400,
+    description: 'Bad Request - File validation failed',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal Server Error - Upload processing failed',
   })
   async uploadAttachment(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new UnauthorizedException({
-        errorType: 'FILE_UPLOAD_FAILED',
-        message: 'Now file uploaded.',
-      });
-    }
-    const data = await this.attachmentsApplication.upload(file);
+    try {
+      // File has already been validated by SecureFileInterceptor
+      if (!file) {
+        throw new BadRequestException('No file provided or file validation failed');
+      }
 
-    return {
-      status: 200,
-      message: 'The document has uploaded successfully.',
-      data,
-    };
+      // Additional security checks at controller level (defense in depth)
+      this.performAdditionalSecurityChecks(file);
+
+      // Generate secure filename and add metadata
+      const sanitizedFilename = this.sanitizeFilename(file.originalname);
+      const fileId = crypto.randomUUID();
+      
+      // Add security metadata to file object
+      (file as any).sanitizedFilename = sanitizedFilename;
+      (file as any).fileId = fileId;
+      (file as any).processedAt = new Date();
+
+      this.logger.log(`Processing secure file upload: ${sanitizedFilename} (${file.size} bytes)`);
+
+      const data = await this.attachmentsApplication.upload(file);
+
+      // Return sanitized response without exposing internal details
+      return {
+        success: true,
+        fileId: data.id || fileId,
+        filename: sanitizedFilename,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+      };
+
+    } catch (error) {
+      this.logger.error(`File upload failed: ${error.message}`, error.stack);
+
+      // Don't expose internal error details to client
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('File upload processing failed');
+    }
+  }
+
+  /**
+   * Additional security checks performed at controller level
+   */
+  private performAdditionalSecurityChecks(file: Express.Multer.File): void {
+    // Check if file was properly validated
+    if (!(file as any).validated) {
+      throw new BadRequestException('File security validation incomplete');
+    }
+
+    // Check for filename injection attempts
+    if (file.originalname.includes('../') || file.originalname.includes('..\\')) {
+      throw new BadRequestException('Invalid filename pattern detected');
+    }
+
+    // Verify file has required metadata
+    if (!file.mimetype || !file.size || !file.originalname) {
+      throw new BadRequestException('Incomplete file metadata');
+    }
+  }
+
+  /**
+   * Sanitize filename for safe storage
+   */
+  private sanitizeFilename(filename: string): string {
+    // Remove path components
+    let sanitized = filename.replace(/^.*[\\\/]/, '');
+    
+    // Replace unsafe characters with underscores
+    sanitized = sanitized.replace(/[^a-zA-Z0-9.-]/g, '_');
+    
+    // Ensure filename doesn't start with a dot
+    if (sanitized.startsWith('.')) {
+      sanitized = 'file_' + sanitized;
+    }
+    
+    // Limit length while preserving extension
+    if (sanitized.length > 100) {
+      const extension = sanitized.split('.').pop() || '';
+      const name = sanitized.substring(0, 95 - extension.length);
+      sanitized = `${name}.${extension}`;
+    }
+    
+    return sanitized;
   }
 
   /**
