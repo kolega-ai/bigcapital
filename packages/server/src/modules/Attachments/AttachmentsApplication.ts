@@ -1,13 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { UploadDocument } from './UploadDocument';
 import { DeleteAttachment } from './DeleteAttachment';
 import { GetAttachment } from './GetAttachment';
 import { LinkAttachment } from './LinkAttachment';
 import { UnlinkAttachment } from './UnlinkAttachment';
 import { getAttachmentPresignedUrl } from './GetAttachmentPresignedUrl';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AttachmentsApplication {
+  private readonly logger = new Logger(AttachmentsApplication.name);
+
   constructor(
     private readonly uploadDocumentService: UploadDocument,
     private readonly deleteDocumentService: DeleteAttachment,
@@ -18,12 +21,61 @@ export class AttachmentsApplication {
   ) {}
 
   /**
-   * Saves the metadata of uploaded document to S3 on database.
-   * @param {} file
+   * Saves the metadata of uploaded document with enhanced security tracking
+   * @param {} file - Validated file with security metadata
    * @returns {Promise<Document>}
    */
-  public upload(file: any) {
-    return this.uploadDocumentService.upload(file);
+  public async upload(file: any) {
+    try {
+      // Generate secure storage key
+      const fileId = (file as any).fileId || crypto.randomUUID();
+      const sanitizedFilename = (file as any).sanitizedFilename || file.originalname;
+      const storageKey = this.generateSecureStorageKey(fileId, sanitizedFilename);
+      
+      // Calculate file hash for integrity verification
+      const fileHash = (file as any).fileHash || crypto.createHash('sha256').update(file.buffer).digest('hex');
+      
+      // Enhanced metadata for security tracking
+      const enhancedFile = {
+        ...file,
+        key: storageKey,
+        fileId,
+        sanitizedFilename,
+        fileHash,
+        uploadedAt: new Date(),
+        validated: true,
+      };
+
+      this.logger.log(`Uploading file with secure metadata: ${sanitizedFilename}, hash: ${fileHash.substring(0, 8)}...`);
+      
+      const result = await this.uploadDocumentService.upload(enhancedFile);
+      
+      return {
+        ...result,
+        id: fileId,
+        secureHash: fileHash.substring(0, 16), // Partial hash for verification
+      };
+      
+    } catch (error) {
+      this.logger.error(`Upload processing failed: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate secure storage key with proper organization
+   */
+  private generateSecureStorageKey(fileId: string, filename: string): string {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    // Extract extension safely
+    const extension = filename.split('.').pop()?.toLowerCase() || 'unknown';
+    
+    // Organize files by date for better management and security
+    return `uploads/${year}/${month}/${day}/${fileId}.${extension}`;
   }
 
   /**
