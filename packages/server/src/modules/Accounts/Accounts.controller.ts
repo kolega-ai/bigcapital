@@ -8,6 +8,7 @@ import {
   Query,
   ParseIntPipe,
   Put,
+  UseGuards,
 } from '@nestjs/common';
 import { AccountsApplication } from './AccountsApplication.service';
 import { CreateAccountDTO } from './CreateAccount.dto';
@@ -31,6 +32,9 @@ import {
   BulkDeleteDto,
   ValidateBulkDeleteResponseDto,
 } from '@/common/dtos/BulkDelete.dto';
+import { RequireAbility } from '@/common/decorators/RequireAbility.decorator';
+import { AbilityGuard } from '@/common/guards/Ability.guard';
+import { AccountAction } from '@/interfaces/Account';
 
 @Controller('accounts')
 @ApiTags('Accounts')
@@ -39,10 +43,12 @@ import {
 @ApiExtraModels(GetAccountTransactionResponseDto)
 @ApiExtraModels(ValidateBulkDeleteResponseDto)
 @ApiCommonHeaders()
+@UseGuards(AbilityGuard)
 export class AccountsController {
   constructor(private readonly accountsApplication: AccountsApplication) { }
 
   @Post('validate-bulk-delete')
+  @RequireAbility(AccountAction.DELETE, 'Account')
   @ApiOperation({
     summary:
       'Validates which accounts can be deleted and returns counts of deletable and non-deletable accounts.',
@@ -64,6 +70,7 @@ export class AccountsController {
   }
 
   @Post('bulk-delete')
+  @RequireAbility(AccountAction.DELETE, 'Account')
   @ApiOperation({ summary: 'Deletes multiple accounts in bulk.' })
   @ApiResponse({
     status: 200,
@@ -78,6 +85,7 @@ export class AccountsController {
   }
 
   @Post()
+  @RequireAbility(AccountAction.CREATE, 'Account')
   @ApiOperation({ summary: 'Create an account' })
   @ApiResponse({
     status: 200,
@@ -88,6 +96,7 @@ export class AccountsController {
   }
 
   @Put(':id')
+  @RequireAbility(AccountAction.EDIT, 'Account')
   @ApiOperation({ summary: 'Edit the given account.' })
   @ApiResponse({
     status: 200,
@@ -108,6 +117,7 @@ export class AccountsController {
   }
 
   @Delete(':id')
+  @RequireAbility(AccountAction.DELETE, 'Account')
   @ApiOperation({ summary: 'Delete the given account.' })
   @ApiResponse({
     status: 200,
@@ -125,6 +135,7 @@ export class AccountsController {
   }
 
   @Post(':id/activate')
+  @RequireAbility(AccountAction.EDIT, 'Account')
   @ApiOperation({ summary: 'Activate the given account.' })
   @ApiResponse({
     status: 200,
@@ -142,6 +153,7 @@ export class AccountsController {
   }
 
   @Post(':id/inactivate')
+  @RequireAbility(AccountAction.EDIT, 'Account')
   @ApiOperation({ summary: 'Inactivate the given account.' })
   @ApiResponse({
     status: 200,
@@ -159,6 +171,7 @@ export class AccountsController {
   }
 
   @Get('types')
+  @RequireAbility(AccountAction.VIEW, 'Account')
   @ApiOperation({ summary: 'Retrieves the account types.' })
   @ApiResponse({
     status: 200,
@@ -175,6 +188,7 @@ export class AccountsController {
   }
 
   @Get('transactions')
+  @RequireAbility(AccountAction.VIEW, 'Account')
   @ApiOperation({ summary: 'Retrieves the account transactions.' })
   @ApiResponse({
     status: 200,
@@ -193,6 +207,7 @@ export class AccountsController {
   }
 
   @Get(':id')
+  @RequireAbility(AccountAction.VIEW, 'Account')
   @ApiOperation({ summary: 'Retrieves the account details.' })
   @ApiResponse({
     status: 200,
@@ -211,6 +226,7 @@ export class AccountsController {
   }
 
   @Get()
+  @RequireAbility(AccountAction.VIEW, 'Account')
   @ApiOperation({ summary: 'Retrieves the accounts.' })
   @ApiResponse({
     status: 200,
