@@ -97,6 +97,8 @@ import { BillLandedCostsModule } from '../BillLandedCosts/BillLandedCosts.module
 import { SocketModule } from '../Socket/Socket.module';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AppThrottleModule } from './AppThrottle.module';
+import { RedisStartupValidationService } from '@/common/config/redis-startup-validation.service';
+import { HealthModule } from '../Health/Health.module';
 
 @Module({
   imports: [
@@ -152,12 +154,31 @@ import { AppThrottleModule } from './AppThrottle.module';
     }),
     RedisModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        config: {
+      useFactory: (configService: ConfigService) => {
+        const redisConfig = {
           host: configService.get('redis.host') || 'localhost',
           port: configService.get('redis.port') || 6379,
-        },
-      }),
+          password: configService.get('redis.password'),
+          db: configService.get('redis.db') || 0,
+          connectTimeout: configService.get('redis.connectTimeout') || 10000,
+          maxRetriesPerRequest: configService.get('redis.maxRetriesPerRequest') || 3,
+          enableReadyCheck: configService.get('redis.enableReadyCheck', true),
+          enableOfflineQueue: configService.get('redis.enableOfflineQueue', true),
+          retryStrategy: configService.get('redis.retryStrategy'),
+        };
+
+        // Enable TLS if configured
+        if (configService.get('redis.tls')) {
+          redisConfig.tls = {};
+        }
+
+        // Remove undefined password to avoid Redis client issues
+        if (!redisConfig.password) {
+          delete redisConfig.password;
+        }
+
+        return { config: redisConfig };
+      },
       inject: [ConfigService],
     }),
     ScheduleModule.forRoot(),
@@ -231,6 +252,7 @@ import { AppThrottleModule } from './AppThrottle.module';
     UsersModule,
     ContactsModule,
     SocketModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [
@@ -251,6 +273,7 @@ import { AppThrottleModule } from './AppThrottle.module';
       useClass: ExcludeNullInterceptor,
     },
     AppService,
+    RedisStartupValidationService,
   ],
 })
 export class AppModule {
