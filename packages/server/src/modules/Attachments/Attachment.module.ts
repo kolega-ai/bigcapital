@@ -69,8 +69,9 @@ const models = [
           },
           acl: function(req, file, cb) {
             // Conditionally set file to public or private based on isPublic flag
-            const aclValue = true ? 'public-read' : 'private';
-            // Set ACL based on the isPublic flag
+            // Default to private for security if isPublic is not provided or false
+            const isPublic = req.body?.isPublic === true || req.body?.isPublic === 'true';
+            const aclValue = isPublic ? 'public-read' : 'private';
             cb(null, aclValue); 
           }
         }),

@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty, IsString } from "class-validator";
+import { IsNotEmpty, IsString, IsOptional, IsBoolean } from "class-validator";
 
 
 export class AttachmentLinkDto {
@@ -30,4 +30,14 @@ export class LinkAttachmentDto {
 export class UploadAttachmentDto {
   @ApiProperty({ type: 'string', format: 'binary' })
   file: any;
+
+  @ApiProperty({ 
+    description: 'Whether the uploaded file should be publicly accessible',
+    required: false,
+    default: false,
+    type: 'boolean'
+  })
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
 }
